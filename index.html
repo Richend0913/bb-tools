@@ -14,7 +14,38 @@
     <div class="login-box">
       <h1>BURNING <span>BROS.</span></h1>
       <p>社内管理ツール</p>
-      <button class="login-btn" onclick="handleLogin()">Googleアカウントでログイン</button>
+      <form onsubmit="return handleLogin(event)" style="text-align:left;">
+        <div class="form-group">
+          <label>ログインID</label>
+          <input type="text" id="loginId" required placeholder="社員番号（例: 92176637）" style="text-align:center;">
+        </div>
+        <div class="form-group">
+          <label>パスワード</label>
+          <input type="password" id="loginPass" required placeholder="パスワード" style="text-align:center;">
+        </div>
+        <p id="loginError" style="color:#c62828; font-size:.85rem; text-align:center; display:none;"></p>
+        <button type="submit" class="login-btn" style="width:100%; margin-top:8px;">ログイン</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- パスワード変更画面 -->
+  <div id="passwordChangePage" class="login-page" style="display:none;">
+    <div class="login-box">
+      <h1>BURNING <span>BROS.</span></h1>
+      <p>初回ログインのためパスワードを変更してください</p>
+      <form onsubmit="return changePassword(event)" style="text-align:left;">
+        <div class="form-group">
+          <label>新しいパスワード（6文字以上）</label>
+          <input type="password" id="newPass1" required minlength="6" placeholder="新しいパスワード" style="text-align:center;">
+        </div>
+        <div class="form-group">
+          <label>新しいパスワード（確認）</label>
+          <input type="password" id="newPass2" required minlength="6" placeholder="もう一度入力" style="text-align:center;">
+        </div>
+        <p id="passError" style="color:#c62828; font-size:.85rem; text-align:center; display:none;"></p>
+        <button type="submit" class="login-btn" style="width:100%; margin-top:8px;">パスワードを変更</button>
+      </form>
     </div>
   </div>
 
@@ -180,36 +211,89 @@
     const auth = firebase.auth();
     const db = firebase.firestore();
     let currentUser = null;
+    let memberInfo = null;
 
-    // 許可するUID（後で設定）
-    const ALLOWED_UIDS = [];
+    const MEMBERS_ALL = [
+      { id: '92176637', name: '柳井 良介' },
+      { id: '92176638', name: '一戸 陽平' },
+      { id: '92176639', name: '三国 一夫' },
+      { id: '92176640', name: '渡辺 勇聖' },
+      { id: '92176636', name: '小和田 聡' },
+    ];
 
-    // メンバー名（シフト用）
-    const MEMBERS = ['自分', 'メンバーA', 'メンバーB', 'メンバーC'];
-
-    auth.onAuthStateChanged(user => {
+    auth.onAuthStateChanged(async user => {
       currentUser = user;
       if (user) {
-        if (ALLOWED_UIDS.length > 0 && !ALLOWED_UIDS.includes(user.uid)) {
-          alert('アクセス権限がありません');
-          auth.signOut();
-          return;
+        // メンバー情報を取得
+        const doc = await db.collection('bbMembers').doc(user.uid).get();
+        if (doc.exists) {
+          memberInfo = doc.data();
+          // 初回パスワード変更チェック
+          if (memberInfo.needPasswordChange) {
+            document.getElementById('loginPage').style.display = 'none';
+            document.getElementById('passwordChangePage').style.display = 'flex';
+            return;
+          }
         }
+
         document.getElementById('loginPage').style.display = 'none';
+        document.getElementById('passwordChangePage').style.display = 'none';
         document.getElementById('mainApp').style.display = 'block';
-        document.getElementById('userName').textContent = user.displayName || user.email;
+        document.getElementById('userName').textContent = memberInfo ? memberInfo.name : user.email;
+
         // メンバーセレクト生成
         const sel = document.getElementById('sName');
-        sel.innerHTML = '<option value="">選択</option>' + MEMBERS.map(m => `<option value="${m}">${m}</option>`).join('');
-        // 月セレクト生成
+        sel.innerHTML = '<option value="">選択</option>' + MEMBERS_ALL.map(m => `<option value="${m.name}">${m.name}</option>`).join('');
+
         generateMonthOptions();
         loadAll();
       }
     });
 
-    function handleLogin() {
-      auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    function handleLogin(e) {
+      e.preventDefault();
+      const id = document.getElementById('loginId').value.trim();
+      const pass = document.getElementById('loginPass').value;
+      const email = id + '@bb-tools.local';
+      const errEl = document.getElementById('loginError');
+      errEl.style.display = 'none';
+
+      auth.signInWithEmailAndPassword(email, pass).catch(err => {
+        errEl.style.display = 'block';
+        if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+          errEl.textContent = 'IDまたはパスワードが正しくありません';
+        } else {
+          errEl.textContent = 'ログインに失敗しました';
+        }
+      });
+      return false;
     }
+
+    async function changePassword(e) {
+      e.preventDefault();
+      const p1 = document.getElementById('newPass1').value;
+      const p2 = document.getElementById('newPass2').value;
+      const errEl = document.getElementById('passError');
+
+      if (p1 !== p2) {
+        errEl.textContent = 'パスワードが一致しません';
+        errEl.style.display = 'block';
+        return false;
+      }
+
+      try {
+        await currentUser.updatePassword(p1);
+        await db.collection('bbMembers').doc(currentUser.uid).update({ needPasswordChange: false });
+        memberInfo.needPasswordChange = false;
+        alert('パスワードを変更しました！');
+        location.reload();
+      } catch (err) {
+        errEl.textContent = 'エラー: ' + err.message;
+        errEl.style.display = 'block';
+      }
+      return false;
+    }
+
     function handleLogout() {
       auth.signOut();
       location.reload();
@@ -349,7 +433,7 @@
 
     async function loadTaxEntries() {
       taxMonthVal = document.getElementById('taxMonth').value;
-      const snap = await db.collection('taxEntries').where('date', '>=', taxMonthVal + '-01').where('date', '<=', taxMonthVal + '-31').orderBy('date').get();
+      const snap = await db.collection('taxEntries').where('createdBy', '==', currentUser.uid).where('date', '>=', taxMonthVal + '-01').where('date', '<=', taxMonthVal + '-31').get();
       const tbody = document.getElementById('taxTable');
 
       let totalIncome = 0, totalExpense = 0;
@@ -395,7 +479,7 @@
 
     // CSV出力
     async function exportCSV() {
-      const snap = await db.collection('taxEntries').where('date', '>=', taxMonthVal + '-01').where('date', '<=', taxMonthVal + '-31').orderBy('date').get();
+      const snap = await db.collection('taxEntries').where('createdBy', '==', currentUser.uid).where('date', '>=', taxMonthVal + '-01').where('date', '<=', taxMonthVal + '-31').get();
       if (snap.empty) { alert('出力するデータがありません'); return; }
       let csv = '日付,種別,勘定科目,金額,摘要\n';
       snap.docs.forEach(doc => {

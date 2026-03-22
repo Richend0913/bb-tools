@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BB Tools - 初期セットアップ</title>
+  <meta name="robots" content="noindex, nofollow">
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; }
+    .log { background: #f5f5f5; padding: 16px; border-radius: 8px; font-size: .85rem; white-space: pre-wrap; max-height: 400px; overflow-y: auto; }
+    button { padding: 12px 24px; background: #1a1a2e; color: #fff; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <h1>BB Tools 初期セットアップ</h1>
+  <p>5人分のアカウントを一括作成します。<b>1回だけ</b>実行してください。</p>
+  <button onclick="createAccounts()">アカウントを作成する</button>
+  <div class="log" id="log">待機中...</div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script>
+    firebase.initializeApp({
+      apiKey: "AIzaSyAyfqJPXfSTVJ0XaUUt0v15HyWbAsHDYW4",
+      authDomain: "jobconnect-app-54a70.firebaseapp.com",
+      projectId: "jobconnect-app-54a70",
+    });
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    const accounts = [
+      { id: '92176637', name: '柳井 良介', role: 'admin' },
+      { id: '92176638', name: '一戸 陽平', role: 'member' },
+      { id: '92176639', name: '三国 一夫', role: 'member' },
+      { id: '92176640', name: '渡辺 勇聖', role: 'member' },
+      { id: '92176636', name: '小和田 聡', role: 'manager' },
+    ];
+
+    const INITIAL_PASSWORD = 'burn2026';
+
+    function log(msg) {
+      document.getElementById('log').textContent += '\n' + msg;
+    }
+
+    async function createAccounts() {
+      log('アカウント作成を開始...');
+
+      for (const acc of accounts) {
+        const email = acc.id + '@bb-tools.local';
+        try {
+          // アカウント作成
+          const cred = await auth.createUserWithEmailAndPassword(email, INITIAL_PASSWORD);
+          await cred.user.updateProfile({ displayName: acc.name });
+
+          // Firestoreにユーザー情報保存
+          await db.collection('bbMembers').doc(cred.user.uid).set({
+            memberId: acc.id,
+            name: acc.name,
+            role: acc.role,
+            needPasswordChange: true,
+            createdAt: new Date().toISOString(),
+          });
+
+          log(`✅ ${acc.name}（${acc.id}）- 作成完了`);
+
+          // 作成したアカウントからログアウト
+          await auth.signOut();
+        } catch (err) {
+          if (err.code === 'auth/email-already-in-use') {
+            log(`⚠️ ${acc.name}（${acc.id}）- 既に存在します`);
+          } else {
+            log(`❌ ${acc.name}（${acc.id}）- エラー: ${err.message}`);
+          }
+        }
+      }
+
+      log('\n完了！');
+      log('\n--- ログイン情報 ---');
+      accounts.forEach(acc => {
+        log(`${acc.name}: ID=${acc.id} / 初期パスワード=${INITIAL_PASSWORD}`);
+      });
+      log('\n初回ログイン後にパスワード変更を促されます。');
+    }
+  </script>
+</body>
+</html>
