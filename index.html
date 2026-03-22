@@ -227,6 +227,11 @@
     auth.onAuthStateChanged(async user => {
       currentUser = user;
       if (user) {
+        // Googleアカウントでログインしてる場合はサインアウト（メール/パスワードのみ許可）
+        if (user.providerData[0]?.providerId === 'google.com') {
+          await auth.signOut();
+          return;
+        }
         // メンバー情報を取得
         const doc = await db.collection('bbMembers').doc(user.uid).get();
         if (doc.exists) {
@@ -399,7 +404,7 @@
       const members = ['一戸 陽平', '三国 一夫', '渡辺 勇聖', '柳井 良介'];
 
       // ヘッダー
-      let headHtml = '<tr><th style="min-width:60px;"></th>';
+      let headHtml = '<tr><th style="min-width:70px; position:sticky; left:0; background:#fafafa; z-index:2;"></th>';
       for (let d = 1; d <= days; d++) {
         const dt = new Date(calYear, calMonth, d);
         const dow = dt.getDay();
@@ -413,39 +418,48 @@
       let bodyHtml = '';
 
       // 人数行
-      bodyHtml += '<tr class="shift-count-row"><td class="shift-name" style="font-size:.7rem; color:#888;">稼働数</td>';
+      bodyHtml += '<tr class="shift-count-row"><td class="shift-name" style="font-size:.7rem; color:#888; position:sticky; left:0; background:#fff; z-index:1;">稼働数</td>';
       for (let d = 1; d <= days; d++) {
         const dateStr = calYear + '-' + String(calMonth+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
         let count = 0;
         for (const m of members) {
-          const key = dateStr + '_' + m;
-          const area = shiftData[key]?.area || getDefaultArea(m, new Date(calYear, calMonth, d).getDay());
+          let area;
+          if (m === '柳井 良介') {
+            area = shiftData[dateStr + '_' + m]?.area || calcYanaiArea(dateStr);
+          } else {
+            area = shiftData[dateStr + '_' + m]?.area || getDefaultArea(m, new Date(calYear, calMonth, d).getDay());
+          }
           if (area !== '休日') count++;
         }
         bodyHtml += `<td>${count}人</td>`;
       }
       bodyHtml += '</tr>';
 
-      // メンバー行
+      // メンバー行（3人 + 柳井は自動）
       for (const member of members) {
         const shortName = member.split(' ')[0];
-        bodyHtml += `<tr><td class="shift-name">${shortName}</td>`;
+        const isYanai = member === '柳井 良介';
         let offCount = 0;
+        let cells = '';
 
         for (let d = 1; d <= days; d++) {
           const dateStr = calYear + '-' + String(calMonth+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
           const dow = new Date(calYear, calMonth, d).getDay();
-          const key = dateStr + '_' + member;
-          const area = shiftData[key]?.area || getDefaultArea(member, dow);
+          let area;
+          if (isYanai) {
+            area = shiftData[dateStr + '_' + member]?.area || calcYanaiArea(dateStr);
+          } else {
+            area = shiftData[dateStr + '_' + member]?.area || getDefaultArea(member, dow);
+          }
           if (area === '休日') offCount++;
           const css = AREA_CSS[area] || '';
           const label = area === '東神奈川' ? '東神奈<br>川' : area;
-          bodyHtml += `<td><div class="shift-cell ${css}" onclick="cycleShift('${dateStr}','${member}')">${label}</div></td>`;
+          const clickable = isYanai ? '' : `onclick="cycleShift('${dateStr}','${member}')"`;
+          const cursor = isYanai ? 'cursor:default;' : '';
+          cells += `<td><div class="shift-cell ${css}" ${clickable} style="${cursor}">${label}</div></td>`;
         }
-        bodyHtml += '</tr>';
 
-        // 休日カウント表示用にデータ保持
-        bodyHtml = bodyHtml.replace(`<td class="shift-name">${shortName}</td>`, `<td class="shift-name">${shortName}<br><span style="font-size:.65rem;color:#888;">休${offCount}日</span></td>`);
+        bodyHtml += `<tr><td class="shift-name" style="position:sticky; left:0; background:#fff; z-index:1;">${shortName}<br><span style="font-size:.65rem;color:#888;">休${offCount}日</span></td>${cells}</tr>`;
       }
 
       document.getElementById('shiftGridBody').innerHTML = bodyHtml;
@@ -456,12 +470,46 @@
       return pattern ? pattern[dow] : '休日';
     }
 
-    // セルタップでエリア切替
+    // 各メンバーの選択肢（エリアor休日のみ）
+    const MEMBER_OPTIONS = {
+      '一戸 陽平': ['中央', '休日'],
+      '三国 一夫': ['神奈川', '休日'],
+      '渡辺 勇聖': ['東神奈川', '休日'],
+    };
+
+    // 柳井のエリアを自動計算（他の3人が休日のエリアをカバー）
+    function calcYanaiArea(dateStr) {
+      const areaMap = { '一戸 陽平': '中央', '三国 一夫': '神奈川', '渡辺 勇聖': '東神奈川' };
+      const dow = new Date(dateStr).getDay();
+      const coverAreas = [];
+
+      for (const [member, area] of Object.entries(areaMap)) {
+        const key = dateStr + '_' + member;
+        const memberArea = shiftData[key]?.area || getDefaultArea(member, dow);
+        if (memberArea === '休日') coverAreas.push(area);
+      }
+
+      if (coverAreas.length === 0) return '休日';
+      return coverAreas[0]; // 複数休みなら最初のエリアをカバー
+    }
+
+    // 編集権限チェック（柳井のみ）
+    function canEdit() {
+      return memberInfo && memberInfo.memberId === '92176637';
+    }
+
+    // セルタップでエリア切替（3人のみ、柳井は自動）
     async function cycleShift(dateStr, member) {
+      if (!canEdit()) { alert('シフトの変更は柳井さんのみ可能です。'); return; }
+      if (member === '柳井 良介') return; // 柳井は自動計算
+
+      const options = MEMBER_OPTIONS[member];
+      if (!options) return;
+
       const key = dateStr + '_' + member;
       const current = shiftData[key]?.area || getDefaultArea(member, new Date(dateStr).getDay());
-      const idx = AREAS.indexOf(current);
-      const next = AREAS[(idx + 1) % AREAS.length];
+      const idx = options.indexOf(current);
+      const next = options[(idx + 1) % options.length];
 
       // Firestoreに保存
       if (shiftData[key]?.docId) {
@@ -472,29 +520,57 @@
         shiftData[key] = { docId: ref.id, area: next };
       }
 
+      // 柳井のシフトも自動更新
+      await updateYanaiShift(dateStr);
       renderShiftGrid();
+    }
+
+    async function updateYanaiShift(dateStr) {
+      const yanaiArea = calcYanaiArea(dateStr);
+      const key = dateStr + '_柳井 良介';
+
+      if (shiftData[key]?.docId) {
+        await db.collection('shifts').doc(shiftData[key].docId).update({ area: yanaiArea });
+        shiftData[key].area = yanaiArea;
+      } else {
+        const ref = await db.collection('shifts').add({ date: dateStr, name: '柳井 良介', area: yanaiArea });
+        shiftData[key] = { docId: ref.id, area: yanaiArea };
+      }
     }
 
     // デフォルトシフト一括生成
     async function generateDefaultShifts() {
+      if (!canEdit()) { alert('シフトの変更は柳井さんのみ可能です。'); return; }
       if (!confirm(calYear + '年' + (calMonth+1) + '月のデフォルトシフトを生成しますか？\n既存のシフトは上書きされません。')) return;
 
       const last = new Date(calYear, calMonth+1, 0);
-      const members = Object.keys(DEFAULT_PATTERN);
+      const threeMembers = ['一戸 陽平', '三国 一夫', '渡辺 勇聖'];
       let count = 0;
 
+      // まず3人のシフトを生成
       for (let d = 1; d <= last.getDate(); d++) {
         const dateStr = calYear + '-' + String(calMonth+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
         const dow = new Date(calYear, calMonth, d).getDay();
 
-        for (const member of members) {
+        for (const member of threeMembers) {
           const key = dateStr + '_' + member;
-          if (shiftData[key]) continue; // 既存データはスキップ
+          if (shiftData[key]) continue;
           const area = getDefaultArea(member, dow);
           const ref = await db.collection('shifts').add({ date: dateStr, name: member, area: area });
           shiftData[key] = { docId: ref.id, area: area };
           count++;
         }
+      }
+
+      // 柳井のシフトを自動計算して生成
+      for (let d = 1; d <= last.getDate(); d++) {
+        const dateStr = calYear + '-' + String(calMonth+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+        const key = dateStr + '_柳井 良介';
+        if (shiftData[key]) continue;
+        const area = calcYanaiArea(dateStr);
+        const ref = await db.collection('shifts').add({ date: dateStr, name: '柳井 良介', area: area });
+        shiftData[key] = { docId: ref.id, area: area };
+        count++;
       }
 
       alert(count + '件のシフトを生成しました！');
