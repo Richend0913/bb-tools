@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BURNING BROS. 社内ツール</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ログイン画面 -->
+  <div id="loginPage" class="login-page">
+    <div class="login-box">
+      <h1>BURNING <span>BROS.</span></h1>
+      <p>社内管理ツール</p>
+      <button class="login-btn" onclick="handleLogin()">Googleアカウントでログイン</button>
+    </div>
+  </div>
+
+  <!-- メインUI（ログイン後） -->
+  <div id="mainApp" style="display:none;">
+    <header class="header">
+      <div class="logo">BURNING <span>BROS.</span></div>
+      <div class="user-area">
+        <span id="userName"></span>
+        <button onclick="handleLogout()">ログアウト</button>
+      </div>
+    </header>
+
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('shaken')">車検管理</div>
+      <div class="tab" onclick="switchTab('shift')">シフト管理</div>
+      <div class="tab" onclick="switchTab('tax')">確定申告</div>
+    </div>
+
+    <div class="content">
+
+      <!-- ===== 車検管理 ===== -->
+      <div class="page active" id="page-shaken">
+        <div class="card">
+          <h2>車両一覧 <button class="btn btn-primary btn-sm" onclick="openModal('addVehicle')">+ 車両追加</button></h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ナンバー</th><th>車種</th><th>使用者</th><th>車検期限</th><th>状態</th><th></th></tr></thead>
+              <tbody id="vehicleTable"><tr><td colspan="6" style="text-align:center; color:#999;">読み込み中...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== シフト管理 ===== -->
+      <div class="page" id="page-shift">
+        <div class="card">
+          <div class="cal-nav">
+            <button onclick="changeMonth(-1)">&lt; 前月</button>
+            <h3 id="calTitle"></h3>
+            <button onclick="changeMonth(1)">翌月 &gt;</button>
+          </div>
+          <div class="calendar">
+            <div class="cal-header">日</div><div class="cal-header">月</div><div class="cal-header">火</div>
+            <div class="cal-header">水</div><div class="cal-header">木</div><div class="cal-header">金</div><div class="cal-header">土</div>
+          </div>
+          <div class="calendar" id="calGrid"></div>
+        </div>
+        <div class="card">
+          <h2>シフト登録 <button class="btn btn-primary btn-sm" onclick="openModal('addShift')">+ シフト追加</button></h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>日付</th><th>名前</th><th>区分</th><th></th></tr></thead>
+              <tbody id="shiftTable"><tr><td colspan="4" style="text-align:center; color:#999;">読み込み中...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 確定申告サポート ===== -->
+      <div class="page" id="page-tax">
+        <div class="summary-grid" id="taxSummary"></div>
+        <div class="card">
+          <h2>収支記録 <button class="btn btn-primary btn-sm" onclick="openModal('addEntry')">+ 記録追加</button></h2>
+          <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
+            <select id="taxMonth" onchange="loadTaxEntries()" style="padding:8px; border:1px solid #ddd; border-radius:6px; font-size:.85rem;">
+            </select>
+            <button class="btn btn-outline btn-sm" onclick="exportCSV()">CSV出力</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>日付</th><th>種別</th><th>カテゴリ</th><th>金額</th><th>摘要</th><th></th></tr></thead>
+              <tbody id="taxTable"><tr><td colspan="6" style="text-align:center; color:#999;">読み込み中...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- モーダル: 車両追加 -->
+  <div class="modal-bg" id="modal-addVehicle">
+    <div class="modal">
+      <button class="close" onclick="closeModal('addVehicle')">&times;</button>
+      <h3>車両を追加</h3>
+      <form onsubmit="return addVehicle(event)">
+        <div class="form-group"><label>ナンバー *</label><input type="text" id="vNumber" required placeholder="横浜300あ1234"></div>
+        <div class="form-group"><label>車種</label><input type="text" id="vModel" placeholder="ハイゼットカーゴ"></div>
+        <div class="form-group"><label>使用者</label><input type="text" id="vUser" placeholder="山田太郎"></div>
+        <div class="form-group"><label>車検期限 *</label><input type="date" id="vExpiry" required></div>
+        <div class="form-group"><label>メモ</label><input type="text" id="vMemo" placeholder="リース車両など"></div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">追加する</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- モーダル: シフト追加 -->
+  <div class="modal-bg" id="modal-addShift">
+    <div class="modal">
+      <button class="close" onclick="closeModal('addShift')">&times;</button>
+      <h3>シフトを追加</h3>
+      <form onsubmit="return addShift(event)">
+        <div class="form-group"><label>日付 *</label><input type="date" id="sDate" required></div>
+        <div class="form-group"><label>名前 *</label>
+          <select id="sName" required>
+            <option value="">選択</option>
+          </select>
+        </div>
+        <div class="form-group"><label>区分 *</label>
+          <select id="sType" required>
+            <option value="出勤">出勤</option>
+            <option value="休み">休み</option>
+            <option value="半日">半日</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">追加する</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- モーダル: 収支追加 -->
+  <div class="modal-bg" id="modal-addEntry">
+    <div class="modal">
+      <button class="close" onclick="closeModal('addEntry')">&times;</button>
+      <h3>収支を記録</h3>
+      <form onsubmit="return addTaxEntry(event)">
+        <div class="form-group"><label>日付 *</label><input type="date" id="eDate" required></div>
+        <div class="form-group"><label>種別 *</label>
+          <select id="eType" required>
+            <option value="income">売上</option>
+            <option value="expense">経費</option>
+          </select>
+        </div>
+        <div class="form-group"><label>カテゴリ *</label>
+          <select id="eCategory" required>
+            <option value="配送収入">配送収入</option>
+            <option value="ガソリン代">ガソリン代</option>
+            <option value="車両リース">車両リース</option>
+            <option value="通信費">通信費</option>
+            <option value="駐車場代">駐車場代</option>
+            <option value="備品・消耗品">備品・消耗品</option>
+            <option value="その他">その他</option>
+          </select>
+        </div>
+        <div class="form-group"><label>金額 *</label><input type="number" id="eAmount" required placeholder="50000"></div>
+        <div class="form-group"><label>摘要</label><input type="text" id="eMemo" placeholder="横浜エリア配送 等"></div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">記録する</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAyfqJPXfSTVJ0XaUUt0v15HyWbAsHDYW4",
+      authDomain: "jobconnect-app-54a70.firebaseapp.com",
+      projectId: "jobconnect-app-54a70",
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+    let currentUser = null;
+
+    // 許可するUID（後で設定）
+    const ALLOWED_UIDS = [];
+
+    // メンバー名（シフト用）
+    const MEMBERS = ['自分', 'メンバーA', 'メンバーB', 'メンバーC'];
+
+    auth.onAuthStateChanged(user => {
+      currentUser = user;
+      if (user) {
+        if (ALLOWED_UIDS.length > 0 && !ALLOWED_UIDS.includes(user.uid)) {
+          alert('アクセス権限がありません');
+          auth.signOut();
+          return;
+        }
+        document.getElementById('loginPage').style.display = 'none';
+        document.getElementById('mainApp').style.display = 'block';
+        document.getElementById('userName').textContent = user.displayName || user.email;
+        // メンバーセレクト生成
+        const sel = document.getElementById('sName');
+        sel.innerHTML = '<option value="">選択</option>' + MEMBERS.map(m => `<option value="${m}">${m}</option>`).join('');
+        // 月セレクト生成
+        generateMonthOptions();
+        loadAll();
+      }
+    });
+
+    function handleLogin() {
+      auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    }
+    function handleLogout() {
+      auth.signOut();
+      location.reload();
+    }
+
+    // タブ切替
+    function switchTab(name) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      event.currentTarget.classList.add('active');
+      document.getElementById('page-' + name).classList.add('active');
+    }
+
+    // モーダル
+    function openModal(name) { document.getElementById('modal-' + name).classList.add('open'); }
+    function closeModal(name) { document.getElementById('modal-' + name).classList.remove('open'); }
+
+    // ===== 車検管理 =====
+    async function loadVehicles() {
+      const snap = await db.collection('vehicles').orderBy('expiry').get();
+      const tbody = document.getElementById('vehicleTable');
+      if (snap.empty) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">車両が登録されていません</td></tr>'; return; }
+      const today = new Date();
+      tbody.innerHTML = snap.docs.map(doc => {
+        const v = doc.data();
+        const exp = new Date(v.expiry);
+        const diff = Math.ceil((exp - today) / (1000*60*60*24));
+        let badge = '';
+        if (diff <= 0) badge = '<span class="badge badge-danger">期限切れ</span>';
+        else if (diff <= 30) badge = '<span class="badge badge-danger">残' + diff + '日</span>';
+        else if (diff <= 90) badge = '<span class="badge badge-warn">残' + diff + '日</span>';
+        else badge = '<span class="badge badge-ok">OK</span>';
+        return `<tr><td>${v.number}</td><td>${v.model||'-'}</td><td>${v.user||'-'}</td><td>${v.expiry}</td><td>${badge}</td><td><button class="btn btn-danger btn-sm" onclick="deleteDoc('vehicles','${doc.id}')">削除</button></td></tr>`;
+      }).join('');
+    }
+
+    async function addVehicle(e) {
+      e.preventDefault();
+      await db.collection('vehicles').add({
+        number: document.getElementById('vNumber').value,
+        model: document.getElementById('vModel').value,
+        user: document.getElementById('vUser').value,
+        expiry: document.getElementById('vExpiry').value,
+        memo: document.getElementById('vMemo').value,
+        createdAt: new Date().toISOString(),
+      });
+      closeModal('addVehicle');
+      e.target.reset();
+      loadVehicles();
+      return false;
+    }
+
+    // ===== シフト管理 =====
+    let calYear, calMonth;
+    function initCalendar() {
+      const now = new Date();
+      calYear = now.getFullYear();
+      calMonth = now.getMonth();
+      renderCalendar();
+    }
+    function changeMonth(d) { calMonth += d; if (calMonth < 0) { calMonth = 11; calYear--; } if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); }
+
+    async function renderCalendar() {
+      document.getElementById('calTitle').textContent = calYear + '年 ' + (calMonth+1) + '月';
+      const grid = document.getElementById('calGrid');
+      const first = new Date(calYear, calMonth, 1);
+      const last = new Date(calYear, calMonth+1, 0);
+      const today = new Date().toISOString().split('T')[0];
+
+      // シフトデータ取得
+      const monthStr = calYear + '-' + String(calMonth+1).padStart(2,'0');
+      const snap = await db.collection('shifts').where('date', '>=', monthStr + '-01').where('date', '<=', monthStr + '-31').get();
+      const shiftMap = {};
+      snap.docs.forEach(doc => {
+        const s = doc.data();
+        if (!shiftMap[s.date]) shiftMap[s.date] = [];
+        shiftMap[s.date].push(s);
+      });
+
+      let html = '';
+      for (let i = 0; i < first.getDay(); i++) html += '<div class="cal-day cal-empty"></div>';
+      for (let d = 1; d <= last.getDate(); d++) {
+        const dateStr = calYear + '-' + String(calMonth+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+        const isToday = dateStr === today;
+        const shifts = shiftMap[dateStr] || [];
+        const shiftText = shifts.map(s => s.name.substring(0,2)).join(' ');
+        html += `<div class="cal-day ${isToday?'cal-today':''}" onclick="openShiftForDate('${dateStr}')"><div class="date">${d}</div><div class="shifts">${shiftText}</div></div>`;
+      }
+      grid.innerHTML = html;
+    }
+
+    function openShiftForDate(date) {
+      document.getElementById('sDate').value = date;
+      openModal('addShift');
+    }
+
+    async function loadShifts() {
+      const monthStr = calYear + '-' + String(calMonth+1).padStart(2,'0');
+      const snap = await db.collection('shifts').where('date', '>=', monthStr + '-01').where('date', '<=', monthStr + '-31').orderBy('date').get();
+      const tbody = document.getElementById('shiftTable');
+      if (snap.empty) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;">シフトが登録されていません</td></tr>'; return; }
+      tbody.innerHTML = snap.docs.map(doc => {
+        const s = doc.data();
+        return `<tr><td>${s.date}</td><td>${s.name}</td><td>${s.type}</td><td><button class="btn btn-danger btn-sm" onclick="deleteDoc('shifts','${doc.id}')">削除</button></td></tr>`;
+      }).join('');
+    }
+
+    async function addShift(e) {
+      e.preventDefault();
+      await db.collection('shifts').add({
+        date: document.getElementById('sDate').value,
+        name: document.getElementById('sName').value,
+        type: document.getElementById('sType').value,
+      });
+      closeModal('addShift');
+      e.target.reset();
+      renderCalendar();
+      loadShifts();
+      return false;
+    }
+
+    // ===== 確定申告サポート =====
+    let taxMonthVal = '';
+    function generateMonthOptions() {
+      const sel = document.getElementById('taxMonth');
+      const now = new Date();
+      let html = '';
+      for (let i = 0; i < 12; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const val = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+        const label = d.getFullYear() + '年' + (d.getMonth()+1) + '月';
+        html += `<option value="${val}">${label}</option>`;
+      }
+      sel.innerHTML = html;
+      taxMonthVal = sel.value;
+    }
+
+    async function loadTaxEntries() {
+      taxMonthVal = document.getElementById('taxMonth').value;
+      const snap = await db.collection('taxEntries').where('date', '>=', taxMonthVal + '-01').where('date', '<=', taxMonthVal + '-31').orderBy('date').get();
+      const tbody = document.getElementById('taxTable');
+
+      let totalIncome = 0, totalExpense = 0;
+      const rows = snap.docs.map(doc => {
+        const e = doc.data();
+        if (e.type === 'income') totalIncome += e.amount;
+        else totalExpense += e.amount;
+        const sign = e.type === 'income' ? '+' : '-';
+        const color = e.type === 'income' ? '#2e7d32' : '#c62828';
+        return `<tr><td>${e.date}</td><td>${e.type==='income'?'売上':'経費'}</td><td>${e.category}</td><td style="color:${color};font-weight:600;">${sign}¥${e.amount.toLocaleString()}</td><td>${e.memo||''}</td><td><button class="btn btn-danger btn-sm" onclick="deleteDoc('taxEntries','${doc.id}')">削除</button></td></tr>`;
+      });
+
+      if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">記録がありません</td></tr>';
+      } else {
+        tbody.innerHTML = rows.join('');
+      }
+
+      // サマリー更新
+      const profit = totalIncome - totalExpense;
+      document.getElementById('taxSummary').innerHTML = `
+        <div class="summary-card"><div class="summary-label">売上</div><div class="summary-value summary-positive">¥${totalIncome.toLocaleString()}</div></div>
+        <div class="summary-card"><div class="summary-label">経費</div><div class="summary-value summary-negative">¥${totalExpense.toLocaleString()}</div></div>
+        <div class="summary-card"><div class="summary-label">利益</div><div class="summary-value ${profit>=0?'summary-positive':'summary-negative'}">¥${profit.toLocaleString()}</div></div>
+      `;
+    }
+
+    async function addTaxEntry(e) {
+      e.preventDefault();
+      await db.collection('taxEntries').add({
+        date: document.getElementById('eDate').value,
+        type: document.getElementById('eType').value,
+        category: document.getElementById('eCategory').value,
+        amount: parseInt(document.getElementById('eAmount').value),
+        memo: document.getElementById('eMemo').value,
+        createdBy: currentUser.uid,
+      });
+      closeModal('addEntry');
+      e.target.reset();
+      loadTaxEntries();
+      return false;
+    }
+
+    // CSV出力
+    async function exportCSV() {
+      const snap = await db.collection('taxEntries').where('date', '>=', taxMonthVal + '-01').where('date', '<=', taxMonthVal + '-31').orderBy('date').get();
+      if (snap.empty) { alert('出力するデータがありません'); return; }
+      let csv = '日付,種別,勘定科目,金額,摘要\n';
+      snap.docs.forEach(doc => {
+        const e = doc.data();
+        csv += `${e.date},${e.type==='income'?'売上':'経費'},${e.category},${e.amount},${(e.memo||'').replace(/,/g,' ')}\n`;
+      });
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `収支記録_${taxMonthVal}.csv`;
+      link.click();
+    }
+
+    // 共通: ドキュメント削除
+    async function deleteDoc(collection, id) {
+      if (!confirm('削除しますか？')) return;
+      await db.collection(collection).doc(id).delete();
+      loadAll();
+    }
+
+    // 全データ読み込み
+    function loadAll() {
+      loadVehicles();
+      initCalendar();
+      loadShifts();
+      loadTaxEntries();
+    }
+  </script>
+</body>
+</html>
