@@ -73,6 +73,28 @@ td { color: #333; }
 .cal-nav button { background: none; border: 1px solid #ddd; border-radius: 6px; padding: 6px 14px; cursor: pointer; color: #333; }
 .cal-nav h3 { font-size: 1rem; }
 
+/* シフトグリッド */
+.shift-cell {
+  padding: 6px 4px; text-align: center; min-width: 52px; cursor: pointer;
+  font-size: .7rem; font-weight: 600; border-radius: 4px; transition: opacity .2s;
+  border: 2px solid transparent;
+}
+.shift-cell:hover { opacity: .8; }
+.shift-chuo { background: #ffebee; color: #c62828; border-color: #ef5350; }
+.shift-kanagawa { background: #ffebee; color: #c62828; border-color: #ef5350; }
+.shift-higashi { background: #e3f2fd; color: #1565c0; border-color: #42a5f5; }
+.shift-off { background: #e3f2fd; color: #1565c0; border-color: #42a5f5; }
+.shift-area-chuo { background: #ffebee; color: #c62828; border-color: #ef5350; }
+.shift-area-kanagawa { background: #ffebee; color: #c62828; border-color: #ef5350; }
+.shift-area-higashi { background: #e8f5e9; color: #2e7d32; border-color: #66bb6a; }
+.shift-area-off { background: #e3f2fd; color: #1976d2; border-color: #90caf9; }
+.shift-sat { color: #1976d2; }
+.shift-sun { color: #c62828; }
+.shift-header-day { font-size: .75rem; color: #888; }
+.shift-header-date { font-size: .95rem; font-weight: 700; }
+.shift-name { font-weight: 600; color: #333; text-align: right; padding-right: 8px; font-size: .85rem; white-space: nowrap; }
+.shift-count-row td { font-size: .7rem; color: #888; text-align: center; }
+
 /* 確定申告 */
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
 .summary-card { background: #fff; border-radius: 10px; padding: 18px; box-shadow: 0 1px 4px rgba(0,0,0,.06); text-align: center; }

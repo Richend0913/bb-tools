@@ -88,20 +88,23 @@
             <h3 id="calTitle"></h3>
             <button onclick="changeMonth(1)">翌月 &gt;</button>
           </div>
-          <div class="calendar">
-            <div class="cal-header">日</div><div class="cal-header">月</div><div class="cal-header">火</div>
-            <div class="cal-header">水</div><div class="cal-header">木</div><div class="cal-header">金</div><div class="cal-header">土</div>
+          <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" onclick="generateDefaultShifts()">デフォルトシフト生成</button>
+            <span style="font-size:.75rem; color:#888; align-self:center;">※ 月初に実行して基本パターンを一括生成</span>
           </div>
-          <div class="calendar" id="calGrid"></div>
-        </div>
-        <div class="card">
-          <h2>シフト登録 <button class="btn btn-primary btn-sm" onclick="openModal('addShift')">+ シフト追加</button></h2>
+          <div style="display:flex; gap:6px; margin-bottom:12px; font-size:.75rem; flex-wrap:wrap;">
+            <span style="padding:3px 10px; background:#ef5350; color:#fff; border-radius:4px;">中央</span>
+            <span style="padding:3px 10px; background:#42a5f5; color:#fff; border-radius:4px;">神奈川</span>
+            <span style="padding:3px 10px; background:#66bb6a; color:#fff; border-radius:4px;">東神奈川</span>
+            <span style="padding:3px 10px; background:#bdbdbd; color:#fff; border-radius:4px;">休日</span>
+          </div>
           <div class="table-wrap">
-            <table>
-              <thead><tr><th>日付</th><th>名前</th><th>区分</th><th></th></tr></thead>
-              <tbody id="shiftTable"><tr><td colspan="4" style="text-align:center; color:#999;">読み込み中...</td></tr></tbody>
+            <table id="shiftGrid" style="font-size:.8rem;">
+              <thead id="shiftGridHead"></thead>
+              <tbody id="shiftGridBody"></tbody>
             </table>
           </div>
+          <p id="shiftOffCount" style="font-size:.8rem; color:#888; margin-top:12px;"></p>
         </div>
       </div>
 
@@ -347,73 +350,158 @@
     }
 
     // ===== シフト管理 =====
+    const AREAS = ['中央', '神奈川', '東神奈川', '休日'];
+    const AREA_CSS = { '中央': 'shift-area-chuo', '神奈川': 'shift-area-kanagawa', '東神奈川': 'shift-area-higashi', '休日': 'shift-area-off' };
+    const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
+
+    // 固定パターン（曜日: 0=日〜6=土）
+    const DEFAULT_PATTERN = {
+      '一戸 陽平': { 0:'中央', 1:'休日', 2:'中央', 3:'中央', 4:'中央', 5:'中央', 6:'中央' },
+      '三国 一夫': { 0:'神奈川', 1:'神奈川', 2:'休日', 3:'神奈川', 4:'神奈川', 5:'神奈川', 6:'神奈川' },
+      '渡辺 勇聖': { 0:'休日', 1:'東神奈川', 2:'東神奈川', 3:'東神奈川', 4:'東神奈川', 5:'東神奈川', 6:'東神奈川' },
+      '柳井 良介': { 0:'東神奈川', 1:'中央', 2:'神奈川', 3:'休日', 4:'休日', 5:'休日', 6:'休日' },
+    };
+
     let calYear, calMonth;
+    let shiftData = {}; // { 'YYYY-MM-DD_名前': { docId, area } }
+
     function initCalendar() {
       const now = new Date();
       calYear = now.getFullYear();
       calMonth = now.getMonth();
-      renderCalendar();
+      loadAndRenderShifts();
     }
-    function changeMonth(d) { calMonth += d; if (calMonth < 0) { calMonth = 11; calYear--; } if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); }
+    function changeMonth(d) {
+      calMonth += d;
+      if (calMonth < 0) { calMonth = 11; calYear--; }
+      if (calMonth > 11) { calMonth = 0; calYear++; }
+      loadAndRenderShifts();
+    }
 
-    async function renderCalendar() {
+    async function loadAndRenderShifts() {
       document.getElementById('calTitle').textContent = calYear + '年 ' + (calMonth+1) + '月';
-      const grid = document.getElementById('calGrid');
-      const first = new Date(calYear, calMonth, 1);
-      const last = new Date(calYear, calMonth+1, 0);
-      const today = new Date().toISOString().split('T')[0];
-
-      // シフトデータ取得
       const monthStr = calYear + '-' + String(calMonth+1).padStart(2,'0');
+
+      // Firestoreから読み込み
       const snap = await db.collection('shifts').where('date', '>=', monthStr + '-01').where('date', '<=', monthStr + '-31').get();
-      const shiftMap = {};
+      shiftData = {};
       snap.docs.forEach(doc => {
         const s = doc.data();
-        if (!shiftMap[s.date]) shiftMap[s.date] = [];
-        shiftMap[s.date].push(s);
+        shiftData[s.date + '_' + s.name] = { docId: doc.id, area: s.area };
       });
 
-      let html = '';
-      for (let i = 0; i < first.getDay(); i++) html += '<div class="cal-day cal-empty"></div>';
+      renderShiftGrid();
+    }
+
+    function renderShiftGrid() {
+      const last = new Date(calYear, calMonth+1, 0);
+      const days = last.getDate();
+      const members = ['一戸 陽平', '三国 一夫', '渡辺 勇聖', '柳井 良介'];
+
+      // ヘッダー
+      let headHtml = '<tr><th style="min-width:60px;"></th>';
+      for (let d = 1; d <= days; d++) {
+        const dt = new Date(calYear, calMonth, d);
+        const dow = dt.getDay();
+        const dowClass = dow === 0 ? 'shift-sun' : dow === 6 ? 'shift-sat' : '';
+        headHtml += `<th style="text-align:center; padding:4px 2px;"><div class="shift-header-day ${dowClass}">${DAY_NAMES[dow]}</div><div class="shift-header-date ${dowClass}">${d}</div></th>`;
+      }
+      headHtml += '</tr>';
+      document.getElementById('shiftGridHead').innerHTML = headHtml;
+
+      // 各メンバー行
+      let bodyHtml = '';
+
+      // 人数行
+      bodyHtml += '<tr class="shift-count-row"><td class="shift-name" style="font-size:.7rem; color:#888;">稼働数</td>';
+      for (let d = 1; d <= days; d++) {
+        const dateStr = calYear + '-' + String(calMonth+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+        let count = 0;
+        for (const m of members) {
+          const key = dateStr + '_' + m;
+          const area = shiftData[key]?.area || getDefaultArea(m, new Date(calYear, calMonth, d).getDay());
+          if (area !== '休日') count++;
+        }
+        bodyHtml += `<td>${count}人</td>`;
+      }
+      bodyHtml += '</tr>';
+
+      // メンバー行
+      for (const member of members) {
+        const shortName = member.split(' ')[0];
+        bodyHtml += `<tr><td class="shift-name">${shortName}</td>`;
+        let offCount = 0;
+
+        for (let d = 1; d <= days; d++) {
+          const dateStr = calYear + '-' + String(calMonth+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+          const dow = new Date(calYear, calMonth, d).getDay();
+          const key = dateStr + '_' + member;
+          const area = shiftData[key]?.area || getDefaultArea(member, dow);
+          if (area === '休日') offCount++;
+          const css = AREA_CSS[area] || '';
+          const label = area === '東神奈川' ? '東神奈<br>川' : area;
+          bodyHtml += `<td><div class="shift-cell ${css}" onclick="cycleShift('${dateStr}','${member}')">${label}</div></td>`;
+        }
+        bodyHtml += '</tr>';
+
+        // 休日カウント表示用にデータ保持
+        bodyHtml = bodyHtml.replace(`<td class="shift-name">${shortName}</td>`, `<td class="shift-name">${shortName}<br><span style="font-size:.65rem;color:#888;">休${offCount}日</span></td>`);
+      }
+
+      document.getElementById('shiftGridBody').innerHTML = bodyHtml;
+    }
+
+    function getDefaultArea(member, dow) {
+      const pattern = DEFAULT_PATTERN[member];
+      return pattern ? pattern[dow] : '休日';
+    }
+
+    // セルタップでエリア切替
+    async function cycleShift(dateStr, member) {
+      const key = dateStr + '_' + member;
+      const current = shiftData[key]?.area || getDefaultArea(member, new Date(dateStr).getDay());
+      const idx = AREAS.indexOf(current);
+      const next = AREAS[(idx + 1) % AREAS.length];
+
+      // Firestoreに保存
+      if (shiftData[key]?.docId) {
+        await db.collection('shifts').doc(shiftData[key].docId).update({ area: next });
+        shiftData[key].area = next;
+      } else {
+        const ref = await db.collection('shifts').add({ date: dateStr, name: member, area: next });
+        shiftData[key] = { docId: ref.id, area: next };
+      }
+
+      renderShiftGrid();
+    }
+
+    // デフォルトシフト一括生成
+    async function generateDefaultShifts() {
+      if (!confirm(calYear + '年' + (calMonth+1) + '月のデフォルトシフトを生成しますか？\n既存のシフトは上書きされません。')) return;
+
+      const last = new Date(calYear, calMonth+1, 0);
+      const members = Object.keys(DEFAULT_PATTERN);
+      let count = 0;
+
       for (let d = 1; d <= last.getDate(); d++) {
         const dateStr = calYear + '-' + String(calMonth+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
-        const isToday = dateStr === today;
-        const shifts = shiftMap[dateStr] || [];
-        const shiftText = shifts.map(s => s.name.substring(0,2)).join(' ');
-        html += `<div class="cal-day ${isToday?'cal-today':''}" onclick="openShiftForDate('${dateStr}')"><div class="date">${d}</div><div class="shifts">${shiftText}</div></div>`;
+        const dow = new Date(calYear, calMonth, d).getDay();
+
+        for (const member of members) {
+          const key = dateStr + '_' + member;
+          if (shiftData[key]) continue; // 既存データはスキップ
+          const area = getDefaultArea(member, dow);
+          const ref = await db.collection('shifts').add({ date: dateStr, name: member, area: area });
+          shiftData[key] = { docId: ref.id, area: area };
+          count++;
+        }
       }
-      grid.innerHTML = html;
+
+      alert(count + '件のシフトを生成しました！');
+      renderShiftGrid();
     }
 
-    function openShiftForDate(date) {
-      document.getElementById('sDate').value = date;
-      openModal('addShift');
-    }
-
-    async function loadShifts() {
-      const monthStr = calYear + '-' + String(calMonth+1).padStart(2,'0');
-      const snap = await db.collection('shifts').where('date', '>=', monthStr + '-01').where('date', '<=', monthStr + '-31').orderBy('date').get();
-      const tbody = document.getElementById('shiftTable');
-      if (snap.empty) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;">シフトが登録されていません</td></tr>'; return; }
-      tbody.innerHTML = snap.docs.map(doc => {
-        const s = doc.data();
-        return `<tr><td>${s.date}</td><td>${s.name}</td><td>${s.type}</td><td><button class="btn btn-danger btn-sm" onclick="deleteDoc('shifts','${doc.id}')">削除</button></td></tr>`;
-      }).join('');
-    }
-
-    async function addShift(e) {
-      e.preventDefault();
-      await db.collection('shifts').add({
-        date: document.getElementById('sDate').value,
-        name: document.getElementById('sName').value,
-        type: document.getElementById('sType').value,
-      });
-      closeModal('addShift');
-      e.target.reset();
-      renderCalendar();
-      loadShifts();
-      return false;
-    }
+    function loadShifts() { loadAndRenderShifts(); }
 
     // ===== 確定申告サポート =====
     let taxMonthVal = '';
